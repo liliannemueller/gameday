@@ -53,6 +53,13 @@ const teamColors = computed(() => {
   }
 })
 
+// NFL season year runs Aug through Feb, so Jan/Feb dates belong to the prior season year
+function getSeasonYear(date) {
+  const month = date.getMonth()
+  const year = date.getFullYear()
+  return month <= 1 ? year - 1 : year
+}
+
 const selectedTeam = ref('')
 const minTotalScore = ref(40)
 const minPassingYards = ref(250)
@@ -60,6 +67,7 @@ const minRushingYards = ref(100)
 const requireOvertime = ref(false)
 const requireCloseGame = ref(false)
 const closeGameMargin = ref(7)
+const regularSeasonOnly = ref(false)
 
 const loading = ref(false)
 const error = ref('')
@@ -80,36 +88,43 @@ async function fetchGames() {
   try {
     const teamId = selectedTeam.value.toString()
     const teamGames = []
+    const seasonYear = getSeasonYear(new Date())
 
-    // Fetch weeks 1-18 of regular season
-    for (let week = 1; week <= 18; week++) {
-      try {
-        const res = await fetch(
-          `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?week=${week}&seasontype=2&year=2025`
-        )
-        const data = await res.json()
+    // seasontype 1 = preseason (weeks 1-4), seasontype 2 = regular season (weeks 1-18)
+    const weeksBySeasonType = { 1: 4, 2: 18 }
 
-        // Filter for games involving the selected team that are completed
-        const events = data.events || []
-        for (const event of events) {
-          const comp = event.competitions?.[0]
-          if (!comp) continue
+    for (const [seasonType, maxWeek] of Object.entries(weeksBySeasonType)) {
+      for (let week = 1; week <= maxWeek; week++) {
+        try {
+          const res = await fetch(
+            `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?week=${week}&seasontype=${seasonType}&year=${seasonYear}`
+          )
+          const data = await res.json()
 
-          const isCompleted = comp.status?.type?.completed
-          const teams = comp.competitors || []
-          const involvesTeam = teams.some(t => t.team?.id === teamId)
+          // Filter for completed games involving the selected team
+          const events = data.events || []
+          for (const event of events) {
+            const comp = event.competitions?.[0]
+            if (!comp) continue
 
-          if (isCompleted && involvesTeam) {
-            teamGames.push(event)
+            const isCompleted = comp.status?.type?.completed
+            const teams = comp.competitors || []
+            const involvesTeam = teams.some(t => t.team?.id === teamId)
+
+            if (isCompleted && involvesTeam) {
+              teamGames.push({ ...event, isPreseason: seasonType === '1' })
+            }
           }
+        } catch (e) {
+          console.error(`Error fetching seasonType ${seasonType} week ${week} (${seasonYear}):`, e)
         }
-      } catch (e) {
-        console.error(`Error fetching week ${week}:`, e)
       }
     }
 
+    teamGames.sort((a, b) => new Date(a.date) - new Date(b.date))
+
     // Analyze each game (get detailed stats)
-    for (const game of teamGames.slice(0, 17)) {
+    for (const game of teamGames) {
       const gameId = game.id
       try {
         const summaryRes = await fetch(
@@ -127,7 +142,7 @@ async function fetchGames() {
     }
 
     if (analyzedGames.value.length === 0) {
-      error.value = 'No completed games found for this team'
+      error.value = 'No completed games found for this team this season'
     }
   } catch (e) {
     error.value = 'Failed to fetch games. Please try again.'
@@ -178,6 +193,7 @@ function analyzeGame(summary, game) {
       id: game.id,
       date: new Date(game.date).toLocaleDateString(),
       week: game.week?.number || 0,
+      isPreseason: game.isPreseason || false,
       homeTeam: homeTeam?.team?.displayName || 'Unknown',
       awayTeam: awayTeam?.team?.displayName || 'Unknown',
       homeScore,
@@ -195,7 +211,11 @@ function analyzeGame(summary, game) {
 }
 
 const recommendations = computed(() => {
-  return analyzedGames.value.map(game => {
+  const filteredGames = regularSeasonOnly.value
+    ? analyzedGames.value.filter(game => !game.isPreseason)
+    : analyzedGames.value
+
+  return filteredGames.map(game => {
     const reasons = []
     let shouldWatch = true
 
@@ -276,6 +296,11 @@ const recommendations = computed(() => {
         <div class="params">
           <h3>Your Preferences</h3>
 
+          <div class="param-row checkbox">
+            <input type="checkbox" id="regularSeasonOnly" v-model="regularSeasonOnly" />
+            <label for="regularSeasonOnly">Only show regular season games</label>
+          </div>
+
           <div class="param-row">
             <label>Min Total Score</label>
             <input type="number" v-model="minTotalScore" min="0" />
@@ -325,7 +350,10 @@ const recommendations = computed(() => {
         >
           <div class="game-header">
             <span class="verdict">{{ game.shouldWatch ? '👍' : '👎' }}</span>
-            <span class="date">Week {{ game.week }} - {{ game.date }}</span>
+            <span class="date">
+              <span v-if="game.isPreseason" class="preseason-badge">Preseason</span>
+              Week {{ game.week }} - {{ game.date }}
+            </span>
           </div>
 
           <div class="matchup">
@@ -526,6 +554,19 @@ select option {
 .date {
   color: rgba(255, 255, 255, 0.6);
   font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.preseason-badge {
+  background: #f59e0b;
+  color: #1a1a2e;
+  font-weight: 700;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
 }
 
 .matchup {
