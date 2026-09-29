@@ -73,6 +73,12 @@ const loading = ref(false)
 const error = ref('')
 const games = ref([])
 const analyzedGames = ref([])
+const watchedGames = ref({})
+const expandedGames = ref({})
+
+function toggleExpand(gameId) {
+  expandedGames.value[gameId] = !expandedGames.value[gameId]
+}
 
 async function fetchGames() {
   if (!selectedTeam.value) {
@@ -84,6 +90,8 @@ async function fetchGames() {
   error.value = ''
   games.value = []
   analyzedGames.value = []
+  watchedGames.value = {}
+  expandedGames.value = {}
 
   try {
     const teamId = selectedTeam.value.toString()
@@ -346,30 +354,58 @@ const recommendations = computed(() => {
           v-for="game in recommendations"
           :key="game.id"
           class="game-card"
-          :class="{ watch: game.shouldWatch, skip: !game.shouldWatch }"
+          :class="{ watch: game.shouldWatch, skip: !game.shouldWatch, expanded: expandedGames[game.id] }"
         >
-          <div class="game-header">
-            <span class="verdict">{{ game.shouldWatch ? '👍' : '👎' }}</span>
-            <span class="date">
-              <span v-if="game.isPreseason" class="preseason-badge">Preseason</span>
-              Week {{ game.week }} - {{ game.date }}
-            </span>
+          <div class="game-row" @click="toggleExpand(game.id)">
+            <div class="game-header">
+              <span class="verdict">{{ game.shouldWatch ? '👍' : '👎' }}</span>
+              <span class="date">
+                <span v-if="game.isPreseason" class="preseason-badge">Preseason</span>
+                Week {{ game.week }} - {{ game.date }}
+              </span>
+            </div>
+
+            <div class="matchup">
+              <span class="team-name">{{ game.awayTeam }}</span>
+              <span class="vs">@</span>
+              <span class="team-name">{{ game.homeTeam }}</span>
+              <span class="chevron">▾</span>
+            </div>
           </div>
 
-          <div class="matchup">
-            <span>{{ game.awayTeam }}</span>
-            <span class="vs">@</span>
-            <span>{{ game.homeTeam }}</span>
-          </div>
+          <div v-if="expandedGames[game.id]" class="expand-panel">
+            <div class="param-row checkbox watched-row">
+              <input
+                type="checkbox"
+                :id="`watched-${game.id}`"
+                v-model="watchedGames[game.id]"
+              />
+              <label :for="`watched-${game.id}`">Watched?</label>
+            </div>
 
-          <div class="reasons">
-            <span
-              v-for="(reason, i) in game.reasons"
-              :key="i"
-              class="reason-tag"
-            >
-              {{ reason }}
-            </span>
+            <div v-if="watchedGames[game.id]" class="reveal">
+              <div class="final-score">
+                Final: {{ game.awayTeam }} {{ game.awayScore }} - {{ game.homeScore }} {{ game.homeTeam }}
+                <span v-if="game.isOvertime" class="ot-badge">OT</span>
+              </div>
+
+              <div class="reasons">
+                <span
+                  v-for="(reason, i) in game.reasons"
+                  :key="i"
+                  class="reason-tag"
+                >
+                  {{ reason }}
+                </span>
+              </div>
+            </div>
+
+            <div v-else class="skeleton-block">
+              <div class="skeleton skeleton-score"></div>
+              <div class="skeleton-tags">
+                <div class="skeleton skeleton-tag" v-for="n in 4" :key="n"></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -582,6 +618,95 @@ select option {
   color: rgba(255, 255, 255, 0.5);
 }
 
+.game-row {
+  cursor: pointer;
+}
+
+.chevron {
+  margin-left: auto;
+  color: rgba(255, 255, 255, 0.5);
+  transition: transform 0.2s ease;
+}
+
+.game-card.expanded .chevron {
+  transform: rotate(180deg);
+}
+
+.expand-panel {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.watched-row {
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.watched-row label {
+  margin-bottom: 0;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.reveal {
+  margin-top: 0;
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.08) 25%,
+    rgba(255, 255, 255, 0.18) 37%,
+    rgba(255, 255, 255, 0.08) 63%
+  );
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+  border-radius: 4px;
+}
+
+.skeleton-score {
+  height: 1.1rem;
+  width: 70%;
+  margin-bottom: 0.75rem;
+}
+
+.skeleton-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.skeleton-tag {
+  height: 1.5rem;
+  width: 100px;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.final-score {
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ot-badge {
+  background: rgba(255, 255, 255, 0.2);
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
 .reasons {
   display: flex;
   flex-wrap: wrap;
@@ -632,8 +757,7 @@ select option {
     gap: 0.25rem;
   }
 
-  .matchup span:first-child,
-  .matchup span:last-child {
+  .matchup .team-name {
     flex: 1;
     min-width: 0;
     overflow: hidden;
