@@ -197,8 +197,21 @@ function analyzeGame(summary, game) {
     const linescores = homeTeam?.linescores || []
     const isOvertime = linescores.length > 4 || competition.status?.period > 4
 
+    // Pregame betting line (not always available, e.g. preseason/old games)
+    const pick = summary.pickcenter?.[0]
+    let spreadLabel = null
+    let overUnder = null
+    let isUpset = false
+    if (pick && typeof pick.spread === 'number') {
+      spreadLabel = pick.details || null
+      overUnder = pick.overUnder ?? null
+      const homeFavored = pick.homeTeamOdds?.favorite
+      isUpset = homeFavored ? awayScore > homeScore : homeScore > awayScore
+    }
+
     return {
       id: game.id,
+      rawDate: game.date,
       date: new Date(game.date).toLocaleDateString(),
       week: game.week?.number || 0,
       isPreseason: game.isPreseason || false,
@@ -211,6 +224,9 @@ function analyzeGame(summary, game) {
       totalPassingYards,
       totalRushingYards,
       isOvertime,
+      spreadLabel,
+      overUnder,
+      isUpset,
     }
   } catch (e) {
     console.error('Error analyzing game:', e)
@@ -223,7 +239,9 @@ const recommendations = computed(() => {
     ? analyzedGames.value.filter(game => !game.isPreseason)
     : analyzedGames.value
 
-  return filteredGames.map(game => {
+  const sortedGames = [...filteredGames].sort((a, b) => new Date(b.rawDate) - new Date(a.rawDate))
+
+  return sortedGames.map(game => {
     const reasons = []
     let shouldWatch = true
 
@@ -265,6 +283,12 @@ const recommendations = computed(() => {
       shouldWatch = false
     } else if (game.scoreDiff <= closeGameMargin.value) {
       reasons.push(`Close game (${game.scoreDiff} pt margin)`)
+    }
+
+    // Note: whether the underdog won is informational only (shown after reveal),
+    // never a watch/skip criterion — it would leak the result via the verdict icon
+    if (game.isUpset) {
+      reasons.push(`Upset! Underdog won (spread: ${game.spreadLabel})`)
     }
 
     return {
@@ -387,6 +411,10 @@ const recommendations = computed(() => {
               <div class="final-score">
                 Final: {{ game.awayTeam }} {{ game.awayScore }} - {{ game.homeScore }} {{ game.homeTeam }}
                 <span v-if="game.isOvertime" class="ot-badge">OT</span>
+              </div>
+
+              <div v-if="game.spreadLabel" class="spread-line">
+                Spread: {{ game.spreadLabel }}<span v-if="game.overUnder"> · O/U {{ game.overUnder }}</span>
               </div>
 
               <div class="reasons">
@@ -705,6 +733,12 @@ select option {
   border-radius: 4px;
   font-size: 0.75rem;
   font-weight: 700;
+}
+
+.spread-line {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.85rem;
+  margin-bottom: 0.75rem;
 }
 
 .reasons {
