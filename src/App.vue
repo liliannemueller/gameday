@@ -382,7 +382,13 @@ const recommendations = computed(() => {
         >
           <div class="game-row" @click="toggleExpand(game.id)">
             <div class="game-header">
-              <span class="verdict">{{ game.shouldWatch ? '👍' : '👎' }}</span>
+              <span
+                class="verdict"
+                :class="{ watch: game.shouldWatch, skip: !game.shouldWatch }"
+              >
+                <span class="football-icon"></span>
+                <span class="verdict-label">{{ game.shouldWatch ? 'Worth the Watch' : 'Pass' }}</span>
+              </span>
               <span class="date">
                 <span v-if="game.isPreseason" class="preseason-badge">Preseason</span>
                 Week {{ game.week }} - {{ game.date }}
@@ -612,7 +618,58 @@ select option {
 }
 
 .verdict {
-  font-size: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.verdict-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #fff;
+}
+
+.football-icon {
+  position: relative;
+  width: 26px;
+  height: 15px;
+  border-radius: 50%;
+  box-shadow: inset -2px -2px 4px rgba(0, 0, 0, 0.35), inset 1px 1px 2px rgba(255, 255, 255, 0.2);
+  transform: rotate(-25deg);
+  transition: background 0.2s ease;
+}
+
+.verdict.watch .football-icon {
+  background: linear-gradient(135deg, #4ade80, #15803d);
+}
+
+.verdict.skip .football-icon {
+  background: linear-gradient(135deg, #f87171, #b91c1c);
+}
+
+.football-icon::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 18%;
+  right: 18%;
+  height: 1.5px;
+  background: rgba(255, 255, 255, 0.85);
+  transform: translateY(-50%);
+}
+
+.football-icon::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 38%;
+  width: 1.5px;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 4px 0 0 rgba(255, 255, 255, 0.85), 8px 0 0 rgba(255, 255, 255, 0.85);
+  transform: translateY(-50%);
 }
 
 .date {
